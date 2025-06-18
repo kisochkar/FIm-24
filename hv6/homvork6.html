@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Динамічна Фігура на AR-маркерах</title>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #results {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: monospace;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 999;
+        }
+    </style>
+</head>
+<body>
+
+    <a-scene embedded arjs='sourceType: webcam; debugUIEnabled: false;'>
+
+        <a-marker id="markerA" preset="custom" url="https://github.com/kisochkar/FIm-24/blob/main/hv6/A.png?raw=true">
+            <a-entity marker-tracker="name: A"></a-entity>
+        </a-marker>
+        <a-marker id="markerB" preset="custom" url="https://github.com/kisochkar/FIm-24/blob/main/hv6/B.png?raw=true">
+            <a-entity marker-tracker="name: B"></a-entity>
+        </a-marker>
+        <a-marker id="markerC" preset="custom" url="https://github.com/kisochkar/FIm-24/blob/main/hv6/C.png?raw=true">
+            <a-entity marker-tracker="name: C"></a-entity>
+        </a-marker>
+        <a-marker id="markerD" preset="custom" url="https://github.com/kisochkar/FIm-24/blob/main/hv6/D.png?raw=true">
+            <a-entity marker-tracker="name: D"></a-entity>
+        </a-marker>
+
+        <a-entity dynamic-quad-triangle-builder></a-entity>
+
+        <a-entity camera></a-entity>
+    </a-scene>
+
+    <div id="results">
+        <p id="perimeter-display">Периметр: очікування...</p>
+        <p id="area-abc-display">Площа ABC: очікування...</p>
+        <p id="area-abd-display">Площа ABD: очікування...</p>
+        <p id="area-acd-display">Площа ACD: очікування...</p>
+        <p id="area-bcd-display">Площа BCD: очікування...</p>
+    </div>
+
+    <script>
+        function dist3D(p1, p2) {
+            if (!p1 || !p2) return 0;
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const dz = p2.z - p1.z;
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        function areaTriangle3D(p1, p2, p3) {
+            if (!p1 || !p2 || !p3) return 0;
+            const vec1 = { x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z };
+            const vec2 = { x: p3.x - p1.x, y: p3.y - p1.y, z: p3.z - p1.z };
+
+            const crossX = vec1.y * vec2.z - vec1.z * vec2.y;
+            const crossY = vec1.z * vec2.x - vec1.x * vec2.z;
+            const crossZ = vec1.x * vec2.y - vec1.y * vec2.x;
+
+            return 0.5 * Math.sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ);
+        }
+
+        AFRAME.registerComponent('marker-tracker', {
+            schema: {
+                name: { type: 'string' }
+            },
+            init: function () {
+                this.marker = this.el.parentNode;
+                this.position = new THREE.Vector3();
+                this.isVisible = false;
+            },
+            tick: function () {
+                const newIsVisible = this.marker.object3D.visible;
+
+                if (newIsVisible !== this.isVisible) {
+                    this.isVisible = newIsVisible;
+                    this.el.sceneEl.emit('marker-update', {
+                        name: this.data.name,
+                        position: this.isVisible ? this.position.clone() : null,
+                        visible: this.isVisible
+                    });
+                }
+
+                if (this.isVisible) {
+                    this.marker.object3D.getWorldPosition(this.position);
+                    this.el.sceneEl.emit('marker-update', {
+                        name: this.data.name,
+                        position: this.position.clone(),
+                        visible: this.isVisible
+                    });
+                }
+            }
+        });
+
+        AFRAME.registerComponent('dynamic-quad-triangle-builder', {
+            init: function () {
+                this.markerPositions = {};
+                this.markerVisible = { A: false, B: false, C: false, D: false };
+                this.lineElements = {};
+
+                const allPossibleLines = [
+                    ['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'A'],
+                    ['A', 'C'], ['B', 'D']
+                ];
+
+                allPossibleLines.forEach(pair => {
+                    const lineName = `${pair[0]}${pair[1]}`;
+                    const lineEl = document.createElement('a-entity');
+                    lineEl.setAttribute('line', {
+                        start: '0 0 0',
+                        end: '0 0 0',
+                        color: '#FF0000',
+                        opacity: 0
+                    });
+                    lineEl.setAttribute('visible', 'false');
+                    this.el.appendChild(lineEl);
+                    this.lineElements[lineName] = lineEl;
+                });
+
+                this.perimeterDisplay = document.getElementById('perimeter-display');
+                this.areaABCDisplay = document.getElementById('area-abc-display');
+                this.areaABDDisplay = document.getElementById('area-abd-display');
+                this.areaACDDisplay = document.getElementById('area-acd-display');
+                this.areaBCDDisplay = document.getElementById('area-bcd-display');
+
+                this.resetDisplays();
+
+                this.el.sceneEl.addEventListener('marker-update', (event) => {
+                    const { name, position, visible } = event.detail;
+                    this.markerPositions[name] = position;
+                    this.markerVisible[name] = visible;
+                    this.updateFigure();
+                });
+            },
+
+            resetDisplays: function() {
+                this.perimeterDisplay.textContent = `Периметр: очікування...`;
+                this.areaABCDisplay.textContent = `Площа ABC: очікування...`;
+                this.areaABDDisplay.textContent = `Площа ABD: очікування...`;
+                this.areaACDDisplay.textContent = `Площа ACD: очікування...`;
+                this.areaBCDDisplay.textContent = `Площа BCD: очікування...`;
+            },
+
+            hideAllLines: function() {
+                Object.values(this.lineElements).forEach(lineEl => {
+                    lineEl.setAttribute('line', 'opacity', 0);
+                    lineEl.setAttribute('visible', 'false');
+                });
+            },
+
+            updateFigure: function () {
+                const visibleMarkersNames = ['A', 'B', 'C', 'D'].filter(name => this.markerVisible[name]);
+                const numVisible = visibleMarkersNames.length;
+
+                this.hideAllLines();
+                this.resetDisplays();
+
+                if (numVisible === 3) {
+                    const [P1Name, P2Name, P3Name] = visibleMarkersNames;
+                    const P1 = this.markerPositions[P1Name];
+                    const P2 = this.markerPositions[P2Name];
+                    const P3 = this.markerPositions[P3Name];
+
+                    if (P1 && P2 && P3) {
+                        this.lineElements[`${P1Name}${P2Name}`] && this.lineElements[`${P1Name}${P2Name}`].setAttribute('line', { start: P1, end: P2, color: '#FF0000', opacity: 1 });
+                        this.lineElements[`${P2Name}${P3Name}`] && this.lineElements[`${P2Name}${P3Name}`].setAttribute('line', { start: P2, end: P3, color: '#FF0000', opacity: 1 });
+                        this.lineElements[`${P3Name}${P1Name}`] && this.lineElements[`${P3Name}${P1Name}`].setAttribute('line', { start: P3, end: P1, color: '#FF0000', opacity: 1 });
+
+                        this.lineElements[`${P1Name}${P2Name}`] && this.lineElements[`${P1Name}${P2Name}`].setAttribute('visible', 'true');
+                        this.lineElements[`${P2Name}${P3Name}`] && this.lineElements[`${P2Name}${P3Name}`].setAttribute('visible', 'true');
+                        this.lineElements[`${P3Name}${P1Name}`] && this.lineElements[`${P3Name}${P1Name}`].setAttribute('visible', 'true');
+
+                        const perimeter = dist3D(P1, P2) + dist3D(P2, P3) + dist3D(P3, P1);
+                        this.perimeterDisplay.textContent = `Периметр (Трикутник ${P1Name}${P2Name}${P3Name}): ${perimeter.toFixed(3)} м`;
+
+                        const area = areaTriangle3D(P1, P2, P3);
+                        this.areaABCDisplay.textContent = `Площа ${P1Name}${P2Name}${P3Name}: ${area.toFixed(3)} м²`;
+                    }
+
+                } else if (numVisible === 4) {
+                    const A = this.markerPositions['A'];
+                    const B = this.markerPositions['B'];
+                    const C = this.markerPositions['C'];
+                    const D = this.markerPositions['D'];
+
+                    if (A && B && C && D) {
+                        this.lineElements['AB'].setAttribute('line', { start: A, end: B, color: '#FF0000', opacity: 1 });
+                        this.lineElements['BC'].setAttribute('line', { start: B, end: C, color: '#FF0000', opacity: 1 });
+                        this.lineElements['CD'].setAttribute('line', { start: C, end: D, color: '#FF0000', opacity: 1 });
+                        this.lineElements['DA'].setAttribute('line', { start: D, end: A, color: '#FF0000', opacity: 1 });
+
+                        this.lineElements['AB'].setAttribute('visible', 'true');
+                        this.lineElements['BC'].setAttribute('visible', 'true');
+                        this.lineElements['CD'].setAttribute('visible', 'true');
+                        this.lineElements['DA'].setAttribute('visible', 'true');
+
+
+                        const distAB = dist3D(A, B);
+                        const distBC = dist3D(B, C);
+                        const distCD = dist3D(C, D);
+                        const distDA = dist3D(D, A);
+                        const perimeter = distAB + distBC + distCD + distDA;
+                        this.perimeterDisplay.textContent = `Периметр (Чотирикутник): ${perimeter.toFixed(3)} м`;
+
+                        const areaABC = areaTriangle3D(A, B, C);
+                        const areaABD = areaTriangle3D(A, B, D);
+                        const areaACD = areaTriangle3D(A, C, D);
+                        const areaBCD = areaTriangle3D(B, C, D);
+
+                        this.areaABCDisplay.textContent = `Площа ABC: ${areaABC.toFixed(3)} м²`;
+                        this.areaABDDisplay.textContent = `Площа ABD: ${areaABD.toFixed(3)} м²`;
+                        this.areaACDDisplay.textContent = `Площа ACD: ${areaACD.toFixed(3)} м²`;
+                        this.areaBCDDisplay.textContent = `Площа BCD: ${areaBCD.toFixed(3)} м²`;
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
