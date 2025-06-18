@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Динамічна Фігура на AR-маркерах</title>
+    <title>Динамічна Фігура на AR-маркерах (Онлайн)</title>
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <style>
@@ -24,18 +24,22 @@
 
     <a-scene embedded arjs='sourceType: webcam; debugUIEnabled: false;'>
 
-        <a-marker id="markerA" preset="custom" url="https://github.com/kisochkar/FIm-24/blob/main/hv6/A.png?raw=true">
+        <a-marker id="markerA" preset="hiro">
             <a-entity marker-tracker="name: A"></a-entity>
         </a-marker>
-        <a-marker id="markerB" preset="custom" url="https://github.com/kisochkar/FIm-24/blob/main/hv6/B.png?raw=true">
+        <a-marker id="markerB" preset="kanji">
             <a-entity marker-tracker="name: B"></a-entity>
         </a-marker>
-        <a-marker id="markerC" preset="custom" url="https://github.com/kisochkar/FIm-24/blob/main/hv6/C.png?raw=true">
+        <!-- Маркери C та D закоментовані для тестування з Hiro та Kanji.
+             Щоб використовувати ваші власні маркери A, B, C, D, вам потрібно буде
+             згенерувати .patt файли для кожного зображення та оновити URL.
+        <a-marker id="markerC" preset="custom" url="ШЛЯХ_ДО_ВАШОГО_PATTERN-C.PATT">
             <a-entity marker-tracker="name: C"></a-entity>
         </a-marker>
-        <a-marker id="markerD" preset="custom" url="https://github.com/kisochkar/FIm-24/blob/main/hv6/D.png?raw=true">
+        <a-marker id="markerD" preset="custom" url="ШЛЯХ_ДО_ВАШОГО_PATTERN-D.PATT">
             <a-entity marker-tracker="name: D"></a-entity>
         </a-marker>
+        -->
 
         <a-entity dynamic-quad-triangle-builder></a-entity>
 
@@ -51,6 +55,7 @@
     </div>
 
     <script>
+        // Допоміжна функція для обчислення відстані між двома 3D-точками
         function dist3D(p1, p2) {
             if (!p1 || !p2) return 0;
             const dx = p2.x - p1.x;
@@ -59,6 +64,7 @@
             return Math.sqrt(dx * dx + dy * dy + dz * dz);
         }
 
+        // Допоміжна функція для обчислення площі трикутника за координатами 3D-вершин
         function areaTriangle3D(p1, p2, p3) {
             if (!p1 || !p2 || !p3) return 0;
             const vec1 = { x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z };
@@ -71,6 +77,7 @@
             return 0.5 * Math.sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ);
         }
 
+        // Компонент, який відстежує позицію маркера
         AFRAME.registerComponent('marker-tracker', {
             schema: {
                 name: { type: 'string' }
@@ -103,15 +110,24 @@
             }
         });
 
+        // Головний компонент, який динамічно будує фігуру та виконує розрахунки
         AFRAME.registerComponent('dynamic-quad-triangle-builder', {
             init: function () {
+                // Список маркерів, які ми відстежуємо.
+                // Для тестування з Hiro/Kanji, використовуємо лише A та B.
+                // Якщо ви додасте C та D назад, додайте їх сюди.
+                this.allMarkerNames = ['A', 'B']; // Змінити на ['A', 'B', 'C', 'D'], коли додасте більше маркерів
                 this.markerPositions = {};
                 this.markerVisible = { A: false, B: false, C: false, D: false };
+
                 this.lineElements = {};
 
+                // Всі можливі лінії між маркерами.
+                // Додайте більше пар, якщо ви використовуєте C та D.
                 const allPossibleLines = [
-                    ['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'A'],
-                    ['A', 'C'], ['B', 'D']
+                    ['A', 'B'], // Лінія між A та B (для 2 маркерів)
+                    // ['A', 'C'], ['B', 'C'], // Додати для трикутника ABC/BCD
+                    // ['C', 'D'], ['D', 'A'], ['B', 'D'] // Додати для чотирикутника та діагоналей
                 ];
 
                 allPossibleLines.forEach(pair => {
@@ -160,19 +176,39 @@
             },
 
             updateFigure: function () {
-                const visibleMarkersNames = ['A', 'B', 'C', 'D'].filter(name => this.markerVisible[name]);
+                const visibleMarkersNames = this.allMarkerNames.filter(name => this.markerVisible[name]);
                 const numVisible = visibleMarkersNames.length;
 
                 this.hideAllLines();
                 this.resetDisplays();
 
+                if (numVisible >= 2) {
+                    const P1Name = visibleMarkersNames[0];
+                    const P2Name = visibleMarkersNames[1];
+                    const P1 = this.markerPositions[P1Name];
+                    const P2 = this.markerPositions[P2Name];
+
+                    if (P1 && P2) {
+                        this.lineElements[`${P1Name}${P2Name}`] && this.lineElements[`${P1Name}${P2Name}`].setAttribute('line', { start: P1, end: P2, color: '#FF0000', opacity: 1 });
+                        this.lineElements[`${P1Name}${P2Name}`] && this.lineElements[`${P1Name}${P2Name}`].setAttribute('visible', 'true');
+
+                        const distance = dist3D(P1, P2);
+                        this.perimeterDisplay.textContent = `Відстань ${P1Name}${P2Name}: ${distance.toFixed(3)} м`;
+                    }
+                }
+
                 if (numVisible === 3) {
+                    // Ця логіка активується, якщо ви розкоментуєте маркер C (або D) в HTML
+                    // і цей маркер стане видимим разом з A та B.
+                    // Переконайтеся, що allMarkerNames у init включає 'C' або 'D'.
+                    // Також, переконайтеся, що allPossibleLines включає сторони трикутника.
                     const [P1Name, P2Name, P3Name] = visibleMarkersNames;
                     const P1 = this.markerPositions[P1Name];
                     const P2 = this.markerPositions[P2Name];
                     const P3 = this.markerPositions[P3Name];
 
                     if (P1 && P2 && P3) {
+                        // Відображаємо сторони трикутника
                         this.lineElements[`${P1Name}${P2Name}`] && this.lineElements[`${P1Name}${P2Name}`].setAttribute('line', { start: P1, end: P2, color: '#FF0000', opacity: 1 });
                         this.lineElements[`${P2Name}${P3Name}`] && this.lineElements[`${P2Name}${P3Name}`].setAttribute('line', { start: P2, end: P3, color: '#FF0000', opacity: 1 });
                         this.lineElements[`${P3Name}${P1Name}`] && this.lineElements[`${P3Name}${P1Name}`].setAttribute('line', { start: P3, end: P1, color: '#FF0000', opacity: 1 });
@@ -189,6 +225,9 @@
                     }
 
                 } else if (numVisible === 4) {
+                    // Ця логіка активується, якщо ви розкоментуєте всі 4 маркери (A, B, C, D) в HTML
+                    // Переконайтеся, що allMarkerNames у init включає всі 4.
+                    // Переконайтеся, що allPossibleLines включає всі сторони чотирикутника та діагоналі.
                     const A = this.markerPositions['A'];
                     const B = this.markerPositions['B'];
                     const C = this.markerPositions['C'];
