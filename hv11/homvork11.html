@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindAR: Власна маска для обличчя</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        .ar-scene {
+            position: fixed;
+            width: 100vw;
+            height: 100vh;
+            left: 0;
+            top: 0;
+        }
+        button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            font-size: 18px;
+            z-index: 9999;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas class="ar-scene"></canvas>
+    <button id="arButton">Start AR (Маска)</button>
+
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+        import { GLTFLoader } from 'https://unpkg.com/three@0.158.0/examples/jsm/loaders/GLTFLoader.js';
+        import { MindARThree } from 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-three.prod.js';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: document.querySelector('.ar-scene') });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            const mindarThree = new MindARThree({
+                container: document.body,
+                imageTargetSrc: '',
+                faceTargetSrc: 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/face.mind',
+                maxTrack: 1
+            });
+
+            const { video, arWorldRoot } = mindarThree;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            directionalLight.position.set(1, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            const faceAnchor = arWorldRoot.add(new THREE.Group());
+            let maskModel;
+
+            const gltfLoader = new GLTFLoader();
+            gltfLoader.load(
+                // ОНОВЛЕНИЙ ШЛЯХ ДО ВАШОЇ МАСКИ
+                'https://raw.githubusercontent.com/kisochkar/FIm-24/main/hv11/assets/Scorpion_mask_glb.glb',
+                (gltf) => {
+                    maskModel = gltf.scene;
+                    // !!! ВАЖЛИВО: Налаштуйте масштаб та позицію вашої моделі !!!
+                    // Для цієї моделі, можливо, доведеться експериментувати з цими значеннями.
+                    // Почніть з менших значень, наприклад, 0.01 або 0.005, якщо маска занадто велика.
+                    maskModel.scale.set(0.01, 0.01, 0.01); // Приклад масштабу, МОЖЕ ПОТРЕБУВАТИ ЗМІН
+                    maskModel.position.set(0, 0, -0.5); // Приклад позиції (x, y, z), МОЖЕ ПОТРЕБУВАТИ ЗМІН
+                    // maskModel.rotation.set(Math.PI / 2, 0, 0); // Можливо, потрібно буде повернути модель, якщо вона неправильно орієнтована
+
+                    faceAnchor.add(maskModel);
+                    console.log("3D маска завантажена успішно.");
+                },
+                undefined,
+                (error) => {
+                    console.error('Помилка завантаження 3D-моделі маски:', error);
+                }
+            );
+
+            mindarThree.onTargetFound = (targetIndex) => {
+                if (targetIndex === 0) {
+                    console.log("Обличчя виявлено!");
+                    if (maskModel) {
+                        maskModel.visible = true;
+                    }
+                }
+            };
+
+            mindarThree.onTargetLost = (targetIndex) => {
+                if (targetIndex === 0) {
+                    console.log("Обличчя втрачено!");
+                    if (maskModel) {
+                        maskModel.visible = false;
+                    }
+                }
+            };
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            const arButton = document.getElementById('arButton');
+            arButton.addEventListener('click', async () => {
+                arButton.style.display = 'none';
+                try {
+                    await mindarThree.start();
+                    renderer.setAnimationLoop(() => {
+                        renderer.render(scene, camera);
+                    });
+                } catch (error) {
+                    console.error("Помилка при запуску AR:", error);
+                    alert("Не вдалося запустити AR. Перевірте дозволи камери та консоль на наявність помилок.");
+                    arButton.style.display = 'block';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
