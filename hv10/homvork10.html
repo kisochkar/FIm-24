@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handpose: Обчислення кутів між пальцями</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.13.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.9/dist/handpose.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 1px solid black;
+            transform: scaleX(-1); /* Віддзеркалення відео, щоб воно виглядало як у дзеркалі */
+        }
+        #status {
+            margin-top: 10px;
+            font-size: 1.2em;
+            color: #333;
+        }
+        #angles-output {
+            margin-top: 20px;
+            font-size: 1.1em;
+            text-align: left;
+            width: 80%;
+            max-width: 600px;
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #angles-output p {
+            margin: 5px 0;
+        }
+        .angle-value {
+            font-weight: bold;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <h1>Handpose: Обчислення кутів між пальцями</h1>
+    <video id="video" style="display:none;"></video>
+    <canvas id="output-canvas"></canvas>
+    <div id="status">Завантаження моделі Handpose...</div>
+    <div id="angles-output">
+        <p>Кути між пальцями (у градусах):</p>
+        <p>Вказівний - Середній: <span id="angle-index-middle" class="angle-value">...</span></p>
+        <p>Середній - Безіменний: <span id="angle-middle-ring" class="angle-value">...</span></p>
+        <p>Безіменний - Мізинець: <span id="angle-ring-pinky" class="angle-value">...</span></p>
+        <p>Великий - Вказівний: <span id="angle-thumb-index" class="angle-value">...</span></p>
+        </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('output-canvas');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+        const angleOutputDivs = {
+            'index-middle': document.getElementById('angle-index-middle'),
+            'middle-ring': document.getElementById('angle-middle-ring'),
+            'ring-pinky': document.getElementById('angle-ring-pinky'),
+            'thumb-index': document.getElementById('angle-thumb-index')
+        };
+
+        let model;
+        let animationFrameId;
+
+        // Функція для обчислення відстані між двома 3D точками
+        function calculateDistance(point1, point2) {
+            const dx = point2[0] - point1[0];
+            const dy = point2[1] - point1[1];
+            const dz = point2[2] - point1[2];
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        // Функція для створення вектора з двох точок
+        function createVector(point1, point2) {
+            return [point2[0] - point1[0], point2[1] - point1[1], point2[2] - point1[2]];
+        }
+
+        // Функція для обчислення скалярного добутку векторів
+        function dotProduct(vec1, vec2) {
+            return vec1[0] * vec2[0] + vec1[1] * vec2[1] + vec1[2] * vec2[2];
+        }
+
+        // Функція для обчислення довжини (норми) вектора
+        function vectorMagnitude(vec) {
+            return Math.sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
+        }
+
+        // Функція для обчислення кута між двома векторами в градусах
+        function calculateAngle(vec1, vec2) {
+            const dot = dotProduct(vec1, vec2);
+            const mag1 = vectorMagnitude(vec1);
+            const mag2 = vectorMagnitude(vec2);
+
+            if (mag1 === 0 || mag2 === 0) return NaN; // Уникнення ділення на нуль
+
+            const cosTheta = dot / (mag1 * mag2);
+            // Обмеження cosTheta до діапазону [-1, 1] для arccos, щоб уникнути NaN через похибки обчислень з плаваючою точкою
+            const clampedCosTheta = Math.max(-1, Math.min(1, cosTheta));
+            const angleRad = Math.acos(clampedCosTheta);
+            return angleRad * (180 / Math.PI); // Перетворення в градуси
+        }
+
+        // Індекси ключових точок для MCP та TIP для кожного пальця
+        const FINGER_LANDMARKS = {
+            thumb: { mcp: 2, tip: 4 },
+            index: { mcp: 5, tip: 8 },
+            middle: { mcp: 9, tip: 12 },
+            ring: { mcp: 13, tip: 16 },
+            pinky: { mcp: 17, tip: 20 }
+        };
+
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    resolve(video);
+                };
+            });
+        }
+
+        async function loadHandposeModel() {
+            statusDiv.textContent = 'Завантаження моделі Handpose...';
+            model = await handpose.load();
+            statusDiv.textContent = 'Модель Handpose завантажена.';
+        }
+
+        async function detectHands() {
+            const predictions = await model.estimateHands(video);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            if (predictions.length > 0) {
+                const hand = predictions[0]; // Беремо першу знайдену руку
+                const landmarks = hand.landmarks;
+
+                // Малювання ключових точок (для візуальної перевірки)
+                for (let i = 0; i < landmarks.length; i++) {
+                    const [x, y, z] = landmarks[i];
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                    ctx.fillStyle = 'red';
+                    ctx.fill();
+                }
+
+                // Визначення векторів для пальців
+                const thumbVector = createVector(landmarks[FINGER_LANDMARKS.thumb.mcp], landmarks[FINGER_LANDMARKS.thumb.tip]);
+                const indexVector = createVector(landmarks[FINGER_LANDMARKS.index.mcp], landmarks[FINGER_LANDMARKS.index.tip]);
+                const middleVector = createVector(landmarks[FINGER_LANDMARKS.middle.mcp], landmarks[FINGER_LANDMARKS.middle.tip]);
+                const ringVector = createVector(landmarks[FINGER_LANDMARKS.ring.mcp], landmarks[FINGER_LANDMARKS.ring.tip]);
+                const pinkyVector = createVector(landmarks[FINGER_LANDMARKS.pinky.mcp], landmarks[FINGER_LANDMARKS.pinky.tip]);
+
+                // Обчислення кутів між сусідніми пальцями
+                const angleIndexMiddle = calculateAngle(indexVector, middleVector);
+                const angleMiddleRing = calculateAngle(middleVector, ringVector);
+                const angleRingPinky = calculateAngle(ringVector, pinkyVector);
+                const angleThumbIndex = calculateAngle(thumbVector, indexVector);
+
+
+                // Виведення результатів
+                angleOutputDivs['index-middle'].textContent = isNaN(angleIndexMiddle) ? 'N/A' : angleIndexMiddle.toFixed(2) + '°';
+                angleOutputDivs['middle-ring'].textContent = isNaN(angleMiddleRing) ? 'N/A' : angleMiddleRing.toFixed(2) + '°';
+                angleOutputDivs['ring-pinky'].textContent = isNaN(angleRingPinky) ? 'N/A' : angleRingPinky.toFixed(2) + '°';
+                angleOutputDivs['thumb-index'].textContent = isNaN(angleThumbIndex) ? 'N/A' : angleThumbIndex.toFixed(2) + '°';
+
+
+                statusDiv.textContent = 'Руку виявлено.';
+            } else {
+                statusDiv.textContent = 'Руку не виявлено.';
+                for (const key in angleOutputDivs) {
+                    angleOutputDivs[key].textContent = '...';
+                }
+            }
+
+            animationFrameId = requestAnimationFrame(detectHands);
+        }
+
+        async function app() {
+            try {
+                await setupCamera();
+                video.play();
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                await loadHandposeModel();
+                detectHands();
+            } catch (error) {
+                console.error("Помилка ініціалізації:", error);
+                statusDiv.textContent = `Помилка: ${error.message}. Переконайтеся, що камера доступна.`;
+            }
+        }
+
+        app();
+    </script>
+</body>
+</html>
