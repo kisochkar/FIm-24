@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR: Храмовий комплекс Гізи (Маркер Hiro)</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        .ar-scene {
+            position: fixed;
+            width: 100vw;
+            height: 100vh;
+            left: 0;
+            top: 0;
+        }
+        button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            font-size: 18px;
+            z-index: 9999;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <canvas class="ar-scene"></canvas>
+    <button id="arButton">Запустити AR (Гіза)</button>
+
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+        import { MindARThree } from 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-three.prod.js';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: document.querySelector('.ar-scene') });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // Налаштування MindAR для відстеження зображень
+            const mindarThree = new MindARThree({
+                container: document.body,
+                imageTargetSrc: 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/hiro.mind', // ВИКОРИСТОВУЄМО МАРКЕР HIRO
+                maxTrack: 1 // Відстежуємо один маркер
+            });
+
+            const { video, arWorldRoot } = mindarThree;
+
+            // Додаємо світло до сцени
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 20, 10); // Позиція світла відносно сцени
+            scene.add(directionalLight);
+
+            // Група для всіх пірамід, щоб застосувати спільне масштабування та анімацію
+            const pyramidGroup = new THREE.Group();
+            arWorldRoot.add(pyramidGroup); // Додаємо групу до кореня AR-світу
+
+            // !!! ГЛОБАЛЬНИЙ МАСШТАБ для всього комплексу Гізи !!!
+            // Піраміди дуже великі, їх потрібно сильно зменшити для AR-маркера (~0.16м).
+            // Залиште це значення 0.001 або зменшіть, якщо піраміди занадто великі.
+            const GLOBAL_SCALE = 0.001;
+            pyramidGroup.scale.set(GLOBAL_SCALE, GLOBAL_SCALE, GLOBAL_SCALE);
+
+            // Завантажуємо текстури
+            const textureLoader = new THREE.TextureLoader();
+
+            // ЦЕГЛЯНА ТЕКСТУРА (з вашого lw3/assets)
+            const brickTexture = textureLoader.load('https://raw.githubusercontent.com/kisochkar/FIm-24/main/lw3/assets/brick.png');
+            brickTexture.wrapS = THREE.RepeatWrapping;
+            brickTexture.wrapT = THREE.RepeatWrapping;
+            brickTexture.repeat.set(8, 8); // Можливо, доведеться налаштувати повторення
+
+            // ЗОЛОТА ТЕКСТУРА (з вашого lw3/assets)
+            const goldTexture = textureLoader.load('https://raw.githubusercontent.com/kisochkar/FIm-24/main/lw3/assets/gold.jpg');
+
+            const pyramidMaterial = new THREE.MeshStandardMaterial({ map: brickTexture });
+            const goldMaterial = new THREE.MeshStandardMaterial({ map: goldTexture }); // ВИКОРИСТОВУЄМО ТЕКСТУРУ ЗОЛОТА
+
+            // --- Функція для створення піраміди ---
+            function createPyramid(base, height, material, topMaterial) {
+                const geometry = new THREE.ConeGeometry(base / 2, height, 4, 1);
+                const pyramidMesh = new THREE.Mesh(geometry, material);
+                pyramidMesh.rotation.y = Math.PI / 4; // Повертаємо, щоб грані були паралельні осям
+
+                // Золота верхівка
+                const topGeometry = new THREE.CylinderGeometry(base / 40, 0, height / 20, 4, 1, false);
+                const pyramidTop = new THREE.Mesh(topGeometry, topMaterial);
+                pyramidTop.position.y = height / 2 + (height / 20) / 2; // Розміщуємо на верхівці піраміди
+
+                const group = new THREE.Group();
+                group.add(pyramidMesh);
+                group.add(pyramidTop);
+                return group;
+            }
+
+            // --- Розміри пірамід (в метрах) ---
+            const cheopsBase = 230;
+            const cheopsHeight = 145;
+            const khefrenBase = 210;
+            const khefrenHeight = 135;
+            const mycerinusBase = 100;
+            const mycerinusHeight = 65;
+
+            // --- Створення та позиціонування пірамід ---
+            // Всі позиції відносно центра arWorldRoot (маркера) і в "метрах", які потім будуть масштабовані GLOBAL_SCALE
+
+            // Піраміда Хеопса (центральна)
+            const cheops = createPyramid(cheopsBase, cheopsHeight, pyramidMaterial, goldMaterial);
+            cheops.position.set(0, cheopsHeight / 2, 0); // Центр комплексу, на рівні землі маркера
+            pyramidGroup.add(cheops);
+
+            // Піраміда Хефрена (трохи позаду і праворуч від Хеопса)
+            const khefren = createPyramid(khefrenBase, khefrenHeight, pyramidMaterial, goldMaterial);
+            khefren.position.set(cheopsBase * 0.7, khefrenHeight / 2, -cheopsBase * 0.3);
+            pyramidGroup.add(khefren);
+
+            // Піраміда Мікеріна (трохи позаду і ліворуч від Хеопса)
+            const mycerinus = createPyramid(mycerinusBase, mycerinusHeight, pyramidMaterial, goldMaterial);
+            mycerinus.position.set(-cheopsBase * 1.0, mycerinusHeight / 2, -cheopsBase * 0.5);
+            pyramidGroup.add(mycerinus);
+
+            // --- Анімація камери ("наїзд") ---
+            // Ми анімуємо позицію всієї групи пірамід, щоб створити ефект "наїзду"
+            const initialPyramidGroupZ = -10; // Початкова позиція Z (далі від камери, у "метрах" сцени)
+            const finalPyramidGroupZ = 10;   // Кінцева позиція Z (ближче до камери)
+            const animationDuration = 8000; // 8 секунд для анімації
+            let animationStartTime = null;
+
+            pyramidGroup.position.z = initialPyramidGroupZ; // Встановлюємо початкову Z-позицію групи
+
+            function animateZoom(currentTime) {
+                if (!animationStartTime) animationStartTime = currentTime;
+                const elapsedTime = currentTime - animationStartTime;
+                let progress = Math.min(1, elapsedTime / animationDuration);
+
+                const easedProgress = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+
+                pyramidGroup.position.z = initialPyramidGroupZ + (finalPyramidGroupZ - initialPyramidGroupZ) * easedProgress;
+
+                if (progress >= 1) {
+                    console.log("Анімація наїзду завершена.");
+                } else {
+                    requestAnimationFrame(animateZoom);
+                }
+            }
+
+            // --- Обробники подій MindAR ---
+            mindarThree.onTargetFound = (targetIndex) => {
+                if (targetIndex === 0) {
+                    console.log("Маркер Hiro виявлено!");
+                    pyramidGroup.visible = true; // Показуємо піраміди
+                    animationStartTime = null; // Скидаємо час для нового старту анімації
+                    requestAnimationFrame(animateZoom);
+                }
+            };
+
+            mindarThree.onTargetLost = (targetIndex) => {
+                if (targetIndex === 0) {
+                    console.log("Маркер Hiro втрачено!");
+                    pyramidGroup.visible = false; // Приховуємо піраміди
+                }
+            };
+
+            // Обробник зміни розміру вікна
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // Кнопка запуску AR
+            const arButton = document.getElementById('arButton');
+            arButton.addEventListener('click', async () => {
+                arButton.style.display = 'none';
+                try {
+                    await mindarThree.start();
+                    renderer.setAnimationLoop(() => {
+                        renderer.render(scene, camera);
+                    });
+                } catch (error) {
+                    console.error("Помилка при запуску AR:", error);
+                    alert("Не вдалося запустити AR. Перевірте дозволи камери та консоль на наявність помилок.");
+                    arButton.style.display = 'block';
+                }
+            });
+
+            // Початково ховаємо піраміди, поки маркер не буде знайдено
+            pyramidGroup.visible = false;
+        });
+    </script>
+</body>
+</html>
