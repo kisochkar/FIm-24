@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Храмовий комплекс Гізи у VR</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+        import { OrbitControls } from 'https://unpkg.com/three@0.158.0/examples/jsm/controls/OrbitControls.js';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        const textureLoader = new THREE.TextureLoader();
+        // Оновлені шляхи до текстур
+        const brickTexture = textureLoader.load('https://raw.githubusercontent.com/kisochkar/FIm-24/main/lw2/assets/brick.png');
+        const goldTexture = textureLoader.load('https://raw.githubusercontent.com/kisochkar/FIm-24/main/lw2/assets/gold.jpg');
+
+        brickTexture.wrapS = THREE.RepeatWrapping;
+        brickTexture.wrapT = THREE.RepeatWrapping;
+        goldTexture.wrapS = THREE.RepeatWrapping;
+        goldTexture.wrapT = THREE.RepeatWrapping;
+
+        const brickMaterial = new THREE.MeshLambertMaterial({ map: brickTexture });
+        const goldMaterial = new THREE.MeshLambertMaterial({ map: goldTexture });
+
+        function createPyramid(height, baseSize, position, rotationY, brickRepeatX, brickRepeatY) {
+            const geometry = new THREE.ConeGeometry(baseSize / Math.sqrt(2) * 0.99, height, 4);
+            
+            const uvAttribute = geometry.attributes.uv;
+            for (let i = 0; i < uvAttribute.count; i++) {
+                const u = uvAttribute.getX(i);
+                const v = uvAttribute.getY(i);
+                uvAttribute.setXY(i, u * brickRepeatX, v * brickRepeatY);
+            }
+
+            const pyramid = new THREE.Mesh(geometry, brickMaterial);
+            pyramid.position.set(position.x, position.y + height / 2, position.z);
+            pyramid.rotation.y = rotationY * Math.PI / 180;
+            scene.add(pyramid);
+
+            const topGeometry = new THREE.ConeGeometry(baseSize / 20, height / 10, 4);
+            const top = new THREE.Mesh(topGeometry, goldMaterial);
+            top.position.set(position.x, position.y + height + height / 20 / 2, position.z);
+            top.rotation.y = rotationY * Math.PI / 180;
+            scene.add(top);
+        }
+
+        const pyramidScale = 1;
+
+        createPyramid(145 * pyramidScale, 230 * pyramidScale, new THREE.Vector3(-20, 0, -20), 45, 5, 5);
+        createPyramid(135 * pyramidScale, 210 * pyramidScale, new THREE.Vector3(0, 0, 0), 45, 4, 4);
+        createPyramid(65 * pyramidScale, 100 * pyramidScale, new THREE.Vector3(20, 0, 20), 45, 2, 2);
+
+        const groundGeometry = new THREE.PlaneGeometry(500, 500);
+        const groundMaterial = new THREE.MeshLambertMaterial({ color: 0xdeb887 });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.1;
+        scene.add(ground);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(0, 100, 50);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.25;
+        controls.screenSpacePanning = false;
+        controls.maxPolarAngle = Math.PI / 2;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
