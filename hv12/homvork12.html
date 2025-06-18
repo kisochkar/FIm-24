@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дві 3D-моделі у віртуальному просторі</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        .scene-container {
+            position: fixed;
+            width: 100vw;
+            height: 100vh;
+            left: 0;
+            top: 0;
+            background-color: #add8e6; /* Легкий блакитний фон для віртуального неба */
+        }
+    </style>
+</head>
+<body>
+    <div class="scene-container">
+        <canvas class="three-scene"></canvas>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+        import { GLTFLoader } from 'https://unpkg.com/three@0.158.0/examples/jsm/loaders/GLTFLoader.js';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: document.querySelector('.three-scene') });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // Налаштування камери: трохи відступаємо назад, щоб бачити моделі
+            camera.position.z = 5;
+
+            // Додаємо світло до сцени
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            directionalLight.position.set(0, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            const gltfLoader = new GLTFLoader();
+
+            // === Модель 1: Ліворуч від себе ===
+            // Шлях до моделі House_001_GLB.glb
+            const model1Path = 'https://raw.githubusercontent.com/kisochkar/FIm-24/main/hv12/assets/House_001_GLB.glb';
+            gltfLoader.load(
+                model1Path,
+                (gltf) => {
+                    const model1 = gltf.scene;
+                    model1.position.set(-2, 0, 0); // 2 одиниці ліворуч
+                    model1.scale.set(0.01, 0.01, 0.01); // ПОТРЕБУЄ НАЛАШТУВАННЯ: можливо, моделі великі, почніть з меншого масштабу
+                    scene.add(model1);
+                    console.log("Модель 1 (ліворуч) завантажена успішно.");
+                },
+                undefined,
+                (error) => {
+                    console.error('Помилка завантаження Моделі 1:', error);
+                }
+            );
+
+            // === Модель 2: Праворуч від себе ===
+            // Шлях до моделі Village House GLTF.gltf
+            const model2Path = 'https://raw.githubusercontent.com/kisochkar/FIm-24/main/hv12/assets/Village%20House%20GLTF.gltf';
+            gltfLoader.load(
+                model2Path,
+                (gltf) => {
+                    const model2 = gltf.scene;
+                    model2.position.set(2, 0, 0); // 2 одиниці праворуч
+                    model2.scale.set(0.01, 0.01, 0.01); // ПОТРЕБУЄ НАЛАШТУВАННЯ: можливо, моделі великі, почніть з меншого масштабу
+                    scene.add(model2);
+                    console.log("Модель 2 (праворуч) завантажена успішно.");
+                },
+                undefined,
+                (error) => {
+                    console.error('Помилка завантаження Моделі 2:', error);
+                }
+            );
+
+            // Анімаційний цикл
+            function animate() {
+                requestAnimationFrame(animate);
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // Обробник зміни розміру вікна
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        });
+    </script>
+</body>
+</html>
