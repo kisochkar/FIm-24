@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MindAR: Відео та 3D-модель на власних маркерах</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        .ar-scene {
+            position: fixed;
+            width: 100vw;
+            height: 100vh;
+            left: 0;
+            top: 0;
+        }
+        button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            font-size: 18px;
+            z-index: 9999;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas class="ar-scene"></canvas>
+    <button id="arButton">Start AR</button>
+
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+        import { GLTFLoader } from 'https://unpkg.com/three@0.158.0/examples/jsm/loaders/GLTFLoader.js';
+        import { MindARThree } from 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-three.prod.js';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: document.querySelector('.ar-scene') });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // !! Важливо: Переконайтеся, що це шлях до вашого ОБ'ЄДНАНОГО файлу маркерів (.mind) !!
+            // Цей файл має бути згенерований з ОДНОГО зображення, яке містить обидва ваші маркери.
+            const mindarThree = new MindARThree({
+                container: document.body,
+                imageTargetSrc: './assets/combined_targets.mind', // Або 'https://raw.githubusercontent.com/kisochkar/FIm-24/main/hv9/assets/combined_targets.mind'
+                maxTrack: 2
+            });
+
+            const { video, arWorldRoot } = mindarThree;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            directionalLight.position.set(1, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            // --- ОБ'ЄКТИ ДЛЯ МАРКЕРА 1 (ВІДЕО) ---
+            const marker1_root = arWorldRoot.add(new THREE.Group());
+            let videoElement;
+            let videoTexture;
+            let videoMesh;
+
+            videoElement = document.createElement('video');
+            // Шлях до відеофайлу (вже був вставлений)
+            videoElement.src = 'https://raw.githubusercontent.com/kisochkar/FIm-24/main/hv9/assets/%D0%B2%D1%96%D0%B4%D0%B5%D0%BE.mp4';
+            videoElement.loop = true;
+            videoElement.muted = true;
+            videoElement.playsInline = true;
+            videoElement.load();
+
+            videoTexture = new THREE.VideoTexture(videoElement);
+            videoTexture.minFilter = THREE.LinearFilter;
+            videoTexture.magFilter = THREE.LinearFilter;
+            videoTexture.format = THREE.RGBAFormat;
+
+            const videoGeometry = new THREE.PlaneGeometry(1, 0.5625); // Співвідношення сторін 16:9
+            const videoMaterial = new THREE.MeshBasicMaterial({ map: videoTexture, side: THREE.DoubleSide });
+            videoMesh = new THREE.Mesh(videoGeometry, videoMaterial);
+            videoMesh.position.set(0, 0.5, 0); // Підняти відео над маркером
+            videoMesh.rotation.x = -Math.PI / 2; // Повернути площину, щоб дивитися вгору з маркера
+
+            // --- ОБ'ЄКТИ ДЛЯ МАРКЕРА 2 (3D-МОДЕЛЬ) ---
+            const marker2_root = arWorldRoot.add(new THREE.Group());
+            const gltfLoader = new GLTFLoader();
+            let model;
+
+            // Шлях до 3D-моделі (.glb) (вже був вставлений)
+            gltfLoader.load(
+                'https://raw.githubusercontent.com/kisochkar/FIm-24/main/hv9/assets/%D0%BC%D0%B0%D1%80%D0%BA%D0%B5%D1%80%20%D0%B4%D0%BB%D1%8F%203%D0%B4%20%D0%BC%D0%BE%D0%B4%D0%B5%D0%BB%D1%96.glb',
+                (gltf) => {
+                    model = gltf.scene;
+                    model.scale.set(0.1, 0.1, 0.1); // Можливо, потрібно налаштувати масштаб моделі
+                    model.position.set(0, 0.5, 0); // Підняти модель над маркером
+                },
+                undefined,
+                (error) => {
+                    console.error('An error occurred while loading the GLTF model:', error);
+                }
+            );
+
+            // Обробники подій для маркерів
+            // targetIndex 0 буде відповідати першому маркеру у вашому об'єднаному файлі, 1 - другому.
+            // Переконайтеся, що ви пам'ятаєте, який маркер ви розмістили першим у об'єднаному зображенні.
+            mindarThree.onTargetFound = (targetIndex) => {
+                if (targetIndex === 0) { // Якщо це ваш перший маркер (для відео)
+                    console.log("Marker 1 (Video) found!");
+                    marker1_root.add(videoMesh);
+                    videoElement.play(); // Запустити відео
+                } else if (targetIndex === 1) { // Якщо це ваш другий маркер (для 3D-моделі)
+                    console.log("Marker 2 (Model) found!");
+                    if (model) {
+                        marker2_root.add(model);
+                    } else {
+                        console.warn("3D model not loaded yet or invalid file type.");
+                    }
+                }
+            };
+
+            mindarThree.onTargetLost = (targetIndex) => {
+                if (targetIndex === 0) {
+                    console.log("Marker 1 (Video) lost!");
+                    marker1_root.remove(videoMesh);
+                    videoElement.pause(); // Призупинити відео
+                } else if (targetIndex === 1) {
+                    console.log("Marker 2 (Model) lost!");
+                    if (model) {
+                        marker2_root.remove(model);
+                    }
+                }
+            };
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            const arButton = document.getElementById('arButton');
+            arButton.addEventListener('click', async () => {
+                arButton.style.display = 'none';
+                await mindarThree.start();
+                renderer.setAnimationLoop(() => {
+                    if (model && marker2_root.children.includes(model)) { // Перевірка, чи модель додана до сцени
+                        model.rotation.y += 0.01;
+                    }
+                    renderer.render(scene, camera);
+                });
+            });
+        });
+    </script>
+</body>
+</html>
